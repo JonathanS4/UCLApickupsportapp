@@ -51,26 +51,36 @@ def listgames():
     return list(games.values())
 
 @app.post("/games",response_model=game,status_code=201)
-def create_game(game_in: creategame):
-    livegame=game(id=uuid4(),**game_in.model_dump())
+def makegame(gamein: creategame):
+    livegame=game(id=uuid4(),**gamein.model_dump())
     games[livegame.id]=livegame
     return livegame
 
-@app.get("/games/{game_id}",response_model=game)
-def get_game(game_id: UUID):
-    if game_id not in games:
+@app.get("/games/{gameid}",response_model=game)
+def getgame(gameid: UUID):
+    if gameid not in games:
         raise HTTPException(status_code=404,detail="Game not found")
-    return games[game_id]
+    return games[gameid]
 
-@app.post("/games/{game_id}/join",response_model=game)
-def join_game(game_id: UUID, player_name: str):
-    livegame=games.get(game_id)
+@app.post("/games/{gameid}/join",response_model=game)
+def joingame(gameid: UUID, playername: str):
+    livegame=games.get(gameid)
     if livegame is None:
         raise HTTPException(status_code=404,detail="Game not found")
-    if player_name in livegame.players:
+    if playername in livegame.players:
         raise HTTPException(status_code=400,detail="Already joined")
     if len(livegame.players)>=livegame.maxplayers:
         raise HTTPException(status_code=409,detail="Game is full")
-    livegame.players.append(player_name)
+    livegame.players.append(playername)
+    return livegame
+
+@app.delete("/games/{gameid}/join",response_model=game)
+def leavegame(gameid: UUID, playername: str):
+    livegame=games.get(gameid)
+    if livegame is None:
+        raise HTTPException(status_code=404,detail="Game not found")
+    if playername not in livegame.players:
+        raise HTTPException(status_code=400,detail="Player is not in this game")
+    livegame.players.remove(playername)
     return livegame
 
