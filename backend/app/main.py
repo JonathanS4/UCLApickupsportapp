@@ -1,8 +1,9 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 from datetime import datetime
 from uuid import UUID, uuid4
+from typing import Literal
 
 app=FastAPI(title="UCLA Pickup Sports API")
 
@@ -11,12 +12,28 @@ app.add_middleware(CORSMiddleware,
                    allow_methods=['*'],
                    allow_headers=['*'],)
 
+maxplayers={"basketball":10,"soccer":22}
+
 class creategame(BaseModel):
-    sports: str
+    sports: Literal["basketball", "soccer"]
     location: str
     starttime: datetime
-    maxplayers: int=Field(gt=1,le=30)
-    skilllevel: str="all"
+    maxplayers: int=Field(gt=1)
+    skilllevel: Literal["beginner","intermediete","advanced","all"] = "all"
+
+    @field_validator("sports","skilllevel",mode="before")
+    @classmethod
+    def nomralize(cls,value):
+        if isinstance(value,str):
+            return value.strip().lower()
+        return value
+
+    @model_validator(mode="after")
+    def checkmaxplayers(self):
+        limit=maxplayers[self.sports]
+        if self.maxplayers>limit:
+            raise ValueError(f"Too many players for {self.sport} game. Can have at most {limit} players")
+        return self
 
 class game(creategame):
     id: UUID
