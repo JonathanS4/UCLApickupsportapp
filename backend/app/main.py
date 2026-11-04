@@ -39,6 +39,18 @@ class game(creategame):
     id: UUID
     players: list[str]=[]
 
+class Location(BaseModel):
+    id: str
+    name: str
+    sports: list[str]
+
+LOCATIONS = [
+    Location(id="wooden", name="John Wooden Center", sports=["basketball"]),
+    Location(id="sunset-canyon", name="Sunset Canyon Recreation Center", sports=["basketball"]),
+    Location(id="im-field", name="Intramural Field", sports=["soccer"]),
+    Location(id="drake", name="Drake Stadium", sports=["soccer"]),
+]
+
 games:dict[UUID,game]={}
 
 @app.get("/")
@@ -83,4 +95,8 @@ def leavegame(gameid: UUID, playername: str):
         raise HTTPException(status_code=400,detail="Player is not in this game")
     livegame.players.remove(playername)
     return livegame
+
+@app.get("/locations",response_model=list[Location])
+def listoflocations():
+    return LOCATIONS
 
