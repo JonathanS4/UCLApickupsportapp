@@ -133,6 +133,12 @@ def leavegame(gameid: UUID, playername: str):
     livegame.players.remove(playername)
     return livegame
 
+@app.delete("/games/{gameid}",status_code=204)
+def cancelgame(gameid: UUID):
+    if gameid not in games:
+        raise HTTPException(status_code=404, detail="Game not found")
+    del games[gameid]
+
 @app.get("/locations",response_model=list[Location])
 def listoflocations():
     return LOCATIONS
