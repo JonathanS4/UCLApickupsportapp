@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator, computed_field
 from datetime import datetime
 from uuid import UUID, uuid4
 from typing import Literal
@@ -38,6 +38,23 @@ class creategame(BaseModel):
 class game(creategame):
     id: UUID
     players: list[str]=[]
+    @computed_field
+    @property
+    def spotsremaining(self)->int:
+        remaining=self.maxplayers-len(self.players)
+        return remaining
+
+    @computed_field
+    @property
+    def status(self)->str:
+        if self.spotsremaining==0:
+                    return "full"
+        elif self.spotsremaining<=3:
+            return "almost full"
+        
+        else:
+            return "open"
+
 
 class Location(BaseModel):
     id: str
@@ -59,7 +76,7 @@ def root():
     return {"message": "Pickup sports backend is running"}
 
 @app.get("/games",response_model=list[game])
-def listgames(sports: str | None=None, location: str | None=None):
+def listgames(sports: str | None=None, location: str | None=None, status: str | None=None):
     results=list(games.values())
     if sports:
         matches=[]
@@ -73,6 +90,12 @@ def listgames(sports: str | None=None, location: str | None=None):
             if i.location==location:
                 matches.append(i)
         results=matches
+    if status:
+            matches=[]
+            for i in results:
+                if i.status==status.strip().lower():
+                    matches.append(i)
+            results=matches
     results.sort(key=lambda i:i.starttime)
     return results
 
