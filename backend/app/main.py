@@ -59,8 +59,22 @@ def root():
     return {"message": "Pickup sports backend is running"}
 
 @app.get("/games",response_model=list[game])
-def listgames():
-    return list(games.values())
+def listgames(sports: str | None=None, location: str | None=None):
+    results=list(games.values())
+    if sports:
+        matches=[]
+        for i in results:
+            if i.sports==sports.strip().lower():
+                matches.append(i)
+        results=matches
+    if location:
+        matches=[]
+        for i in results:
+            if i.location==location:
+                matches.append(i)
+        results=matches
+    results.sort(key=lambda i:i.starttime)
+    return results
 
 @app.post("/games",response_model=game,status_code=201)
 def makegame(gamein: creategame):
