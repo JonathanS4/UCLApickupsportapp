@@ -143,3 +143,8 @@ def cancelgame(gameid: UUID):
 def listoflocations():
     return LOCATIONS
 
+@app.get("/sports")
+def sportsallowed():
+    return maxplayers
+
+
