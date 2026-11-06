@@ -1,9 +1,10 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator, model_validator, computed_field
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID, uuid4
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 app=FastAPI(title="UCLA Pickup Sports API")
 
@@ -13,6 +14,8 @@ app.add_middleware(CORSMiddleware,
                    allow_headers=['*'],)
 
 maxplayers={"basketball":10,"soccer":22}
+
+pacific=ZoneInfo("America/Los_Angeles")
 
 class creategame(BaseModel):
     sports: Literal["basketball", "soccer"]
@@ -33,6 +36,22 @@ class creategame(BaseModel):
         limit=maxplayers[self.sports]
         if self.maxplayers>limit:
             raise ValueError(f"Too many players for {self.sport} game. Can have at most {limit} players")
+        return self
+    @field_validator("starttime", mode="after")
+    @classmethod
+    def normalizestarttime(cls, value):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=pacific)
+        else:
+            value = value.astimezone(pacific)
+        if value.minute % 15 != 0 or value.second != 0 or value.microsecond != 0:
+            raise ValueError("Start time must be on a 15-minute mark (:00, :15, :30, :45); no seconds allowed")
+        return value
+
+    @model_validator(mode="after")
+    def check_starttime(self):
+        if self.starttime<datetime.now(pacific):
+            raise ValueError("Game start time must be in the future")
         return self
 
 class game(creategame):
@@ -155,5 +174,6 @@ def findplayer(playername: str):
             matches.append(i)
     matches.sort(key=lambda i: i.starttime)
     return matches
+
 
 
