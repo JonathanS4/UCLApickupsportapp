@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator, computed_field
 from datetime import datetime
 from uuid import UUID, uuid4
 from typing import Literal
@@ -38,6 +38,23 @@ class creategame(BaseModel):
 class game(creategame):
     id: UUID
     players: list[str]=[]
+    @computed_field
+    @property
+    def spotsremaining(self)->int:
+        remaining=self.maxplayers-len(self.players)
+        return remaining
+
+    @computed_field
+    @property
+    def status(self)->str:
+        if self.spotsremaining==0:
+                    return "full"
+        elif self.spotsremaining<=3:
+            return "almost full"
+        
+        else:
+            return "open"
+
 
 class Location(BaseModel):
     id: str
@@ -59,8 +76,28 @@ def root():
     return {"message": "Pickup sports backend is running"}
 
 @app.get("/games",response_model=list[game])
-def listgames():
-    return list(games.values())
+def listgames(sports: str | None=None, location: str | None=None, status: str | None=None):
+    results=list(games.values())
+    if sports:
+        matches=[]
+        for i in results:
+            if i.sports==sports.strip().lower():
+                matches.append(i)
+        results=matches
+    if location:
+        matches=[]
+        for i in results:
+            if i.location==location:
+                matches.append(i)
+        results=matches
+    if status:
+            matches=[]
+            for i in results:
+                if i.status==status.strip().lower():
+                    matches.append(i)
+            results=matches
+    results.sort(key=lambda i:i.starttime)
+    return results
 
 @app.post("/games",response_model=game,status_code=201)
 def makegame(gamein: creategame):
@@ -96,7 +133,27 @@ def leavegame(gameid: UUID, playername: str):
     livegame.players.remove(playername)
     return livegame
 
+@app.delete("/games/{gameid}",status_code=204)
+def cancelgame(gameid: UUID):
+    if gameid not in games:
+        raise HTTPException(status_code=404, detail="Game not found")
+    del games[gameid]
+
 @app.get("/locations",response_model=list[Location])
 def listoflocations():
     return LOCATIONS
+
+@app.get("/sports")
+def sportsallowed():
+    return maxplayers
+
+@app.get("/players/{playername}/games", response_model=list[game])
+def findplayer(playername: str):
+    matches=[]
+    for i in games.values():
+        if playername in i.players:
+            matches.append(i)
+    matches.sort(key=lambda i: i.starttime)
+    return matches
+
 
