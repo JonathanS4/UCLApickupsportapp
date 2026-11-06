@@ -147,4 +147,13 @@ def listoflocations():
 def sportsallowed():
     return maxplayers
 
+@app.get("/players/{playername}/games", response_model=list[game])
+def findplayer(playername: str):
+    matches=[]
+    for i in games.values():
+        if playername in i.players:
+            matches.append(i)
+    matches.sort(key=lambda i: i.starttime)
+    return matches
+
 
