@@ -35,7 +35,7 @@ class creategame(BaseModel):
     def checkmaxplayers(self):
         limit=maxplayers[self.sports]
         if self.maxplayers>limit:
-            raise ValueError(f"Too many players for {self.sport} game. Can have at most {limit} players")
+            raise ValueError(f"Too many players for {self.sports} game. Can have at most {limit} players")
         return self
     @field_validator("starttime", mode="after")
     @classmethod
