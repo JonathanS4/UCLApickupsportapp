@@ -80,11 +80,13 @@ class Location(BaseModel):
     name: str
     sports: list[str]
 
+
 LOCATIONS = [
     Location(id="wooden", name="John Wooden Center", sports=["basketball"]),
-    Location(id="sunset-canyon", name="Sunset Canyon Recreation Center", sports=["basketball"]),
-    Location(id="im-field", name="Intramural Field", sports=["soccer"]),
     Location(id="drake", name="Drake Stadium", sports=["soccer"]),
+    Location(id="sunset", name="Sunset Canyon Rec Center", sports=["soccer", "basketball"]),
+    Location(id="hitch", name="Hitch Basketball Courts", sports=["basketball"]),
+    Location(id="sycamore", name="Sycamore Park", sports=["soccer", "basketball"]),
 ]
 
 games:dict[UUID,game]={}
