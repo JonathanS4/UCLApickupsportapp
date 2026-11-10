@@ -22,11 +22,11 @@ class creategame(BaseModel):
     location: str
     starttime: datetime
     maxplayers: int=Field(gt=1)
-    skilllevel: Literal["beginner","intermediete","advanced","all"] = "all"
+    skilllevel: Literal["beginner","intermediate","advanced","all"] = "all"
 
     @field_validator("sports","skilllevel",mode="before")
     @classmethod
-    def nomralize(cls,value):
+    def normalize(cls,value):
         if isinstance(value,str):
             return value.strip().lower()
         return value
