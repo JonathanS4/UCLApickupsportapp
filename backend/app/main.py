@@ -134,9 +134,14 @@ def getgame(gameid: UUID):
 
 @app.post("/games/{gameid}/join",response_model=game)
 def joingame(gameid: UUID, playername: str):
+    playername=playername.strip()
+    if not playername:
+        raise HTTPException(status_code=400,detail="Player name cannot be blank")
     livegame=games.get(gameid)
     if livegame is None:
         raise HTTPException(status_code=404,detail="Game not found")
+    if livegame.starttime<=datetime.now(pacific):
+        raise HTTPException(status_code=400,detail="Game already started")
     if playername in livegame.players:
         raise HTTPException(status_code=400,detail="Already joined")
     if len(livegame.players)>=livegame.maxplayers:
