@@ -22,11 +22,11 @@ class creategame(BaseModel):
     location: str
     starttime: datetime
     maxplayers: int=Field(gt=1)
-    skilllevel: Literal["beginner","intermediete","advanced","all"] = "all"
+    skilllevel: Literal["beginner","intermediate","advanced","all"] = "all"
 
     @field_validator("sports","skilllevel",mode="before")
     @classmethod
-    def nomralize(cls,value):
+    def normalize(cls,value):
         if isinstance(value,str):
             return value.strip().lower()
         return value
@@ -80,11 +80,13 @@ class Location(BaseModel):
     name: str
     sports: list[str]
 
+
 LOCATIONS = [
     Location(id="wooden", name="John Wooden Center", sports=["basketball"]),
-    Location(id="sunset-canyon", name="Sunset Canyon Recreation Center", sports=["basketball"]),
-    Location(id="im-field", name="Intramural Field", sports=["soccer"]),
     Location(id="drake", name="Drake Stadium", sports=["soccer"]),
+    Location(id="sunset", name="Sunset Canyon Rec Center", sports=["soccer", "basketball"]),
+    Location(id="hitch", name="Hitch Basketball Courts", sports=["basketball"]),
+    Location(id="sycamore", name="Sycamore Park", sports=["soccer", "basketball"]),
 ]
 
 games:dict[UUID,game]={}
@@ -132,9 +134,14 @@ def getgame(gameid: UUID):
 
 @app.post("/games/{gameid}/join",response_model=game)
 def joingame(gameid: UUID, playername: str):
+    playername=playername.strip()
+    if not playername:
+        raise HTTPException(status_code=400,detail="Player name cannot be blank")
     livegame=games.get(gameid)
     if livegame is None:
         raise HTTPException(status_code=404,detail="Game not found")
+    if livegame.starttime<=datetime.now(pacific):
+        raise HTTPException(status_code=400,detail="Game already started")
     if playername in livegame.players:
         raise HTTPException(status_code=400,detail="Already joined")
     if len(livegame.players)>=livegame.maxplayers:

@@ -1,4 +1,7 @@
 from fastapi.testclient import TestClient
+from datetime import datetime, timedelta
+from uuid import UUID
+from app.main import app, games, pacific
 from app.main import app
 
 client = TestClient(app)
@@ -68,3 +71,19 @@ def testCancelGame():
     gameid = create()
     assert client.delete(f"/games/{gameid}").status_code == 204
     assert client.get(f"/games/{gameid}").status_code == 404
+
+def testBlankNameRejected():
+    gameid = create()
+    assert join(gameid, "   ").status_code == 400
+
+def testNameIsTrimmed():
+    gameid = create()
+    join(gameid, "jonathan")
+    assert join(gameid, "  jonathan  ").status_code == 400
+
+def testCannotJoinStartedGame():
+    gameid=create()
+    games[UUID(gameid)].starttime = datetime.now(pacific)-timedelta(hours=1)
+    res=join(gameid, "latecomer")
+    assert res.status_code==400
+    assert res.json()["detail"]=="Game already started"
