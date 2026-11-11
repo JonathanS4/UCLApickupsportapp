@@ -87,3 +87,35 @@ def testCannotJoinStartedGame():
     res=join(gameid, "latecomer")
     assert res.status_code==400
     assert res.json()["detail"]=="Game already started"
+
+def testChangingLocation():
+    gameid=create(maxplayers=10)
+    res=client.patch(f"/games/{gameid}",json={"location":"Drake Stadium"})
+    assert res.status_code==200
+    assert res.json()["location"]=="Drake Stadium"
+    assert res.json()["sports"]=="basketball"
+    assert res.json()["id"]==gameid
+
+def testEditKeepsPlayers():
+    gameid=create(maxplayers=4)
+    join(gameid,"a")
+    res = client.patch(f"/games/{gameid}",json={"maxplayers":6})
+    assert res.json()["players"]==["a"]
+    assert res.json()["maxplayers"]==6
+
+def testCannotShrinkBelowPlayers():
+    gameid=create(maxplayers=3)
+    join(gameid,"a")
+    join(gameid,"b")
+    join(gameid,"c")
+    res = client.patch(f"/games/{gameid}",json={"maxplayers":2})
+    assert res.status_code==409
+
+def testEditStillChecksRules():
+    gameid=create()
+    assert client.patch(f"/games/{gameid}",json={"maxplayers": 11}).status_code==422
+    assert client.patch(f"/games/{gameid}",json={"starttime": "2027-01-15T18:13:00"}).status_code==422
+
+def testEditMissingGame():
+    res=client.patch("/games/00000000-0000-0000-0000-000000000000", json={"location": "Drake Stadium"})
+    assert res.status_code==404
