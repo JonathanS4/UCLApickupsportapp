@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, field_validator, model_validator, computed_field
+from pydantic import BaseModel, Field, field_validator, model_validator, computed_field, ValidationError
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 from typing import Literal
@@ -73,6 +73,12 @@ class game(creategame):
         
         else:
             return "open"
+
+class updategame(BaseModel):
+    location: str | None=None
+    starttime:datetime | None=None
+    maxplayers: int | None=None
+    skilllevel: str | None=None
 
 
 class Location(BaseModel):
@@ -164,6 +170,24 @@ def cancelgame(gameid: UUID):
     if gameid not in games:
         raise HTTPException(status_code=404, detail="Game not found")
     del games[gameid]
+
+@app.patch("/games/{gameid}",response_model=game)
+def editgame(gameid: UUID,changes: updategame):
+    livegame=games.get(gameid)
+    if livegame is None:
+        raise HTTPException(status_code=404,detail="Game not found")
+    current=livegame.model_dump(include={"sports","location","starttime","maxplayers","skilllevel"})
+    current.update(changes.model_dump(exclude_unset=True))
+    try:
+        checked=creategame(**current)
+    except ValidationError as e:
+        raise HTTPException(status_code=422,detail=[err["msg"] for err in e.errors()])
+
+    if checked.maxplayers<len(livegame.players):
+        raise HTTPException(status_code=409,detail="Can't set max players below the number of players already joined")
+    updated=game(id=livegame.id,players=livegame.players,**checked.model_dump())
+    games[gameid]=updated
+    return updated
 
 @app.get("/locations",response_model=list[Location])
 def listoflocations():
