@@ -1,10 +1,17 @@
+import os
+os.environ["DATABASE_URL"]="sqlite:///./test.db"
+
 from fastapi.testclient import TestClient
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
-from app.main import app, games, pacific
 from app.main import app
+from app.db import Base, engine, SessionLocal
+from app.models import gameRow
 
 client = TestClient(app)
+
+Base.metadata.drop_all(bind=engine)
+Base.metadata.create_all(bind=engine)
 
 def make_game(sports="basketball", maxplayers=2):
     return {
@@ -83,7 +90,10 @@ def testNameIsTrimmed():
 
 def testCannotJoinStartedGame():
     gameid=create()
-    games[UUID(gameid)].starttime = datetime.now(pacific)-timedelta(hours=1)
+    with SessionLocal() as db:
+        row = db.get(gameRow, UUID(gameid))
+        row.starttime = datetime.now(timezone.utc)-timedelta(hours=1)
+        db.commit()
     res=join(gameid, "latecomer")
     assert res.status_code==400
     assert res.json()["detail"]=="Game already started"
