@@ -1,10 +1,17 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+from app.db import Base, engine, getdb
+from app.models import gameRow, playerRow
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator, model_validator, computed_field, ValidationError
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 from typing import Literal
 from zoneinfo import ZoneInfo
+
+Base.metadata.create_all(bind=engine)
 
 app=FastAPI(title="UCLA Pickup Sports API")
 
@@ -54,9 +61,15 @@ class creategame(BaseModel):
             raise ValueError("Game start time must be in the future")
         return self
 
-class game(creategame):
+class game(BaseModel):
     id: UUID
+    sports: str
+    location: str
+    starttime: datetime
+    maxplayers: int
+    skilllevel: str
     players: list[str]=[]
+
     @computed_field
     @property
     def spotsremaining(self)->int:
@@ -95,99 +108,105 @@ LOCATIONS = [
     Location(id="sycamore", name="Sycamore Park", sports=["soccer", "basketball"]),
 ]
 
-games:dict[UUID,game]={}
+def timeToPacific(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        value=value.replace(tzinfo=timezone.utc)
+    return value.astimezone(pacific)
+
+def togame(row: gameRow) -> game:
+    return game(id=row.id, sports=row.sports, location=row.location, 
+                starttime=timeToPacific(row.starttime), maxplayers=row.maxplayers,
+                skilllevel=row.skilllevel,players=[p.playername for p in row.players],)
+
+def findgame(db: Session, gameid: UUID, lock: bool=False) -> gameRow:
+    row=db.get(gameRow, gameid, with_for_update=lock)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+    return row
 
 @app.get("/")
-
 def root():
     return {"message": "Pickup sports backend is running"}
 
 @app.get("/games",response_model=list[game])
-def listgames(sports: str | None=None, location: str | None=None, status: str | None=None):
-    results=list(games.values())
+def listgames(sports: str | None=None, location: str | None=None, status: str | None=None, db: Session=Depends(getdb)):
+    query=select(gameRow).order_by(gameRow.starttime)
     if sports:
-        matches=[]
-        for i in results:
-            if i.sports==sports.strip().lower():
-                matches.append(i)
-        results=matches
+        query=query.where(gameRow.sports==sports.strip().lower())
     if location:
-        matches=[]
-        for i in results:
-            if i.location==location:
-                matches.append(i)
-        results=matches
+        query=query.where(gameRow.location==location)
+    results=[togame(row) for row in db.scalars(query)]
     if status:
-            matches=[]
-            for i in results:
-                if i.status==status.strip().lower():
-                    matches.append(i)
-            results=matches
-    results.sort(key=lambda i:i.starttime)
+        results=[i for i in results if i.status==status.strip().lower()]
     return results
 
 @app.post("/games",response_model=game,status_code=201)
-def makegame(gamein: creategame):
-    livegame=game(id=uuid4(),**gamein.model_dump())
-    games[livegame.id]=livegame
-    return livegame
+def makegame(gamein: creategame, db: Session=Depends(getdb)):
+    row=gameRow(sports=gamein.sports, location=gamein.location,
+        starttime=gamein.starttime.astimezone(timezone.utc), 
+        maxplayers=gamein.maxplayers, skilllevel=gamein.skilllevel,)
+    db.add(row)
+    db.commit()
+    return togame(row)
+    
 
 @app.get("/games/{gameid}",response_model=game)
-def getgame(gameid: UUID):
-    if gameid not in games:
-        raise HTTPException(status_code=404,detail="Game not found")
-    return games[gameid]
+def getgame(gameid: UUID, db: Session=Depends(getdb)):
+    return togame(findgame(db, gameid))
 
 @app.post("/games/{gameid}/join",response_model=game)
-def joingame(gameid: UUID, playername: str):
+def joingame(gameid: UUID, playername: str, db: Session=Depends(getdb)):
     playername=playername.strip()
     if not playername:
-        raise HTTPException(status_code=400,detail="Player name cannot be blank")
-    livegame=games.get(gameid)
-    if livegame is None:
-        raise HTTPException(status_code=404,detail="Game not found")
-    if livegame.starttime<=datetime.now(pacific):
-        raise HTTPException(status_code=400,detail="Game already started")
-    if playername in livegame.players:
-        raise HTTPException(status_code=400,detail="Already joined")
-    if len(livegame.players)>=livegame.maxplayers:
-        raise HTTPException(status_code=409,detail="Game is full")
-    livegame.players.append(playername)
-    return livegame
+        raise HTTPException(status_code=400, detail="Player name cannot be blank")
+    row=findgame(db, gameid, lock=True)
+    if timeToPacific(row.starttime)<=datetime.now(pacific):
+        raise HTTPException(status_code=400, detail="Game already started")
+    if playername in [p.playername for p in row.players]:
+        raise HTTPException(status_code=400, detail="Already joined")
+    if len(row.players)>=row.maxplayers:
+        raise HTTPException(status_code=409, detail="Game is full")
+    row.players.append(playerRow(playername=playername))
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Already joined")
+    return togame(row)
 
 @app.delete("/games/{gameid}/join",response_model=game)
-def leavegame(gameid: UUID, playername: str):
-    livegame=games.get(gameid)
-    if livegame is None:
-        raise HTTPException(status_code=404,detail="Game not found")
-    if playername not in livegame.players:
-        raise HTTPException(status_code=400,detail="Player is not in this game")
-    livegame.players.remove(playername)
-    return livegame
+def leavegame(gameid: UUID, playername: str, db: Session=Depends(getdb)):
+    row=findgame(db, gameid, lock=True)
+    for p in row.players:
+        if p.playername==playername.strip():
+            row.players.remove(p)
+            db.commit()
+            return togame(row)
+    raise HTTPException(status_code=400,detail="Player is not in this game")
 
 @app.delete("/games/{gameid}",status_code=204)
-def cancelgame(gameid: UUID):
-    if gameid not in games:
-        raise HTTPException(status_code=404, detail="Game not found")
-    del games[gameid]
+def cancelgame(gameid: UUID, db: Session=Depends(getdb)):
+    row=findgame(db, gameid)
+    db.delete(row)
+    db.commit()
 
 @app.patch("/games/{gameid}",response_model=game)
-def editgame(gameid: UUID,changes: updategame):
-    livegame=games.get(gameid)
-    if livegame is None:
-        raise HTTPException(status_code=404,detail="Game not found")
-    current=livegame.model_dump(include={"sports","location","starttime","maxplayers","skilllevel"})
+def editgame(gameid: UUID, changes: updategame, db: Session=Depends(getdb)):
+    row=findgame(db, gameid, lock=True)
+    current=togame(row).model_dump(include={"sports","location","starttime","maxplayers","skilllevel"})
     current.update(changes.model_dump(exclude_unset=True))
     try:
         checked=creategame(**current)
     except ValidationError as e:
-        raise HTTPException(status_code=422,detail=[err["msg"] for err in e.errors()])
-
-    if checked.maxplayers<len(livegame.players):
-        raise HTTPException(status_code=409,detail="Can't set max players below the number of players already joined")
-    updated=game(id=livegame.id,players=livegame.players,**checked.model_dump())
-    games[gameid]=updated
-    return updated
+        raise HTTPException(status_code=422, detail=[err["msg"] for err in e.errors()])
+    if checked.maxplayers<len(row.players):
+        raise HTTPException(status_code=409, detail="Can't set max players below the number of players already joined")
+    row.location=checked.location
+    row.starttime=checked.starttime.astimezone(timezone.utc)
+    row.maxplayers=checked.maxplayers
+    row.skilllevel=checked.skilllevel
+    db.commit()
+    return togame(row)
 
 @app.get("/locations",response_model=list[Location])
 def listoflocations():
@@ -198,13 +217,12 @@ def sportsallowed():
     return maxplayers
 
 @app.get("/players/{playername}/games", response_model=list[game])
-def findplayer(playername: str):
-    matches=[]
-    for i in games.values():
-        if playername in i.players:
-            matches.append(i)
-    matches.sort(key=lambda i: i.starttime)
-    return matches
+def findplayer(playername: str, db: Session=Depends(getdb)):
+    query=(select(gameRow)
+           .join(playerRow)
+           .where(playerRow.playername==playername.strip())
+           .order_by(gameRow.starttime))
+    return [togame(row) for row in db.scalars(query)]
 
 
 
