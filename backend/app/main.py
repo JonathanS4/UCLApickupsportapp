@@ -31,7 +31,7 @@ class creategame(BaseModel):
     maxplayers: int=Field(gt=1)
     skilllevel: Literal["beginner","intermediate","advanced","all"] = "all"
 
-    @field_validator("sports","skilllevel",mode="before")
+    @field_validator("sports","skilllevel","location",mode="before")
     @classmethod
     def normalize(cls,value):
         if isinstance(value,str):
@@ -59,6 +59,19 @@ class creategame(BaseModel):
     def check_starttime(self):
         if self.starttime<datetime.now(pacific):
             raise ValueError("Game start time must be in the future")
+        return self
+
+    @model_validator(mode="after")
+    def checklocation(self):
+        loc=None
+        for l in LOCATIONS:
+            if l.id==self.location:
+                loc=l
+                break
+        if loc is None:
+            raise ValueError(f"Unknown location '{self.location}'")
+        if self.sports not in loc.sports:
+            raise ValueError(f"{loc.name} doesn't host {self.sports} games")
         return self
 
 class game(BaseModel):
