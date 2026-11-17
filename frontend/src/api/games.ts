@@ -38,7 +38,7 @@ export async function createGame(body: CreateGameBody) {
 }
 export async function joinGameApi(id: string, playerName: string) {
   const url = new URL(`${API_URL}/games/${id}/join`)
-  url.searchParams.set("player_name", playerName)
+  url.searchParams.set("playername", playerName)
   const response = await fetch(url, { method: "POST", signal: AbortSignal.timeout(4000) })
   return (await read(response)) as ApiGame
 }
