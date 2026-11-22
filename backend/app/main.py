@@ -147,16 +147,27 @@ def checkhost(row: gameRow, playername: str):
 def root():
     return {"message": "Pickup sports backend is running"}
 
-@app.get("/games",response_model=list[game])
-def listgames(sports: str | None=None, location: str | None=None, status: str | None=None, db: Session=Depends(getdb)):
+@app.get("/games", response_model=list[game])
+def listgames(sports: str | None=None, location: str | None=None, status: str | None=None,
+    include_past: bool=False, db: Session=Depends(getdb),):
     query=select(gameRow).order_by(gameRow.starttime)
     if sports:
         query=query.where(gameRow.sports==sports.strip().lower())
     if location:
-        query=query.where(gameRow.location==location)
-    results=[togame(row) for row in db.scalars(query)]
+        query=query.where(gameRow.location==location.strip().lower())
+    if not include_past:
+        now=datetime.now(timezone.utc)
+        query=query.where(gameRow.starttime>=now)
+    results=[]
+    for row in db.scalars(query):
+        results.append(togame(row))
     if status:
-        results=[i for i in results if i.status==status.strip().lower()]
+        wanted=status.strip().lower()
+        filtered=[]
+        for g in results:
+            if g.status==wanted:
+                filtered.append(g)
+        results=filtered
     return results
 
 @app.post("/games",response_model=game,status_code=201)
