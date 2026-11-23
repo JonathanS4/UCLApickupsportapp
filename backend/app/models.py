@@ -13,6 +13,7 @@ class gameRow(Base):
     starttime: Mapped[datetime]=mapped_column(DateTime(timezone=True), index=True)
     maxplayers: Mapped[int]=mapped_column(Integer)
     skilllevel: Mapped[str]=mapped_column(String(20), default="all")
+    host: Mapped[str]=mapped_column(String, nullable=False)
 
     players: Mapped[list["playerRow"]]=relationship(back_populates="game", cascade="all, delete-orphan", order_by="playerRow.id")
 

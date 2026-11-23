@@ -30,6 +30,7 @@ class creategame(BaseModel):
     starttime: datetime
     maxplayers: int=Field(gt=1)
     skilllevel: Literal["beginner","intermediate","advanced","all"] = "all"
+    host: str=Field(min_length=1)
 
     @field_validator("sports","skilllevel","location",mode="before")
     @classmethod
@@ -82,6 +83,7 @@ class game(BaseModel):
     maxplayers: int
     skilllevel: str
     players: list[str]=[]
+    host: str
 
     @computed_field
     @property
@@ -129,7 +131,7 @@ def timeToPacific(value: datetime) -> datetime:
 def togame(row: gameRow) -> game:
     return game(id=row.id, sports=row.sports, location=row.location, 
                 starttime=timeToPacific(row.starttime), maxplayers=row.maxplayers,
-                skilllevel=row.skilllevel,players=[p.playername for p in row.players],)
+                skilllevel=row.skilllevel,players=[p.playername for p in row.players],host=row.host,)
 
 def findgame(db: Session, gameid: UUID, lock: bool=False) -> gameRow:
     row=db.get(gameRow, gameid, with_for_update=lock)
@@ -137,27 +139,45 @@ def findgame(db: Session, gameid: UUID, lock: bool=False) -> gameRow:
         raise HTTPException(status_code=404, detail="Game not found")
     return row
 
+def checkhost(row: gameRow, playername: str):
+    if row.host!=playername.strip():
+        raise HTTPException(status_code=403, detail="Only host has this function")
+
 @app.get("/")
 def root():
     return {"message": "Pickup sports backend is running"}
 
-@app.get("/games",response_model=list[game])
-def listgames(sports: str | None=None, location: str | None=None, status: str | None=None, db: Session=Depends(getdb)):
+@app.get("/games", response_model=list[game])
+def listgames(sports: str | None=None, location: str | None=None, status: str | None=None,
+    include_past: bool=False, db: Session=Depends(getdb),):
     query=select(gameRow).order_by(gameRow.starttime)
     if sports:
         query=query.where(gameRow.sports==sports.strip().lower())
     if location:
-        query=query.where(gameRow.location==location)
-    results=[togame(row) for row in db.scalars(query)]
+        query=query.where(gameRow.location==location.strip().lower())
+    if not include_past:
+        now=datetime.now(timezone.utc)
+        query=query.where(gameRow.starttime>=now)
+    results=[]
+    for row in db.scalars(query):
+        results.append(togame(row))
     if status:
-        results=[i for i in results if i.status==status.strip().lower()]
+        wanted=status.strip().lower()
+        filtered=[]
+        for g in results:
+            if g.status==wanted:
+                filtered.append(g)
+        results=filtered
     return results
 
 @app.post("/games",response_model=game,status_code=201)
 def makegame(gamein: creategame, db: Session=Depends(getdb)):
+    host=gamein.host.strip()
     row=gameRow(sports=gamein.sports, location=gamein.location,
         starttime=gamein.starttime.astimezone(timezone.utc), 
-        maxplayers=gamein.maxplayers, skilllevel=gamein.skilllevel,)
+        maxplayers=gamein.maxplayers, skilllevel=gamein.skilllevel,
+        host=host,)
+    row.players.append(playerRow(playername=host))
     db.add(row)
     db.commit()
     return togame(row)
@@ -198,15 +218,17 @@ def leavegame(gameid: UUID, playername: str, db: Session=Depends(getdb)):
     raise HTTPException(status_code=400,detail="Player is not in this game")
 
 @app.delete("/games/{gameid}",status_code=204)
-def cancelgame(gameid: UUID, db: Session=Depends(getdb)):
+def cancelgame(gameid: UUID, playername: str, db: Session=Depends(getdb)):
     row=findgame(db, gameid)
+    checkhost(row, playername)
     db.delete(row)
     db.commit()
 
 @app.patch("/games/{gameid}",response_model=game)
-def editgame(gameid: UUID, changes: updategame, db: Session=Depends(getdb)):
+def editgame(gameid: UUID, changes: updategame, playername: str, db: Session=Depends(getdb)):
     row=findgame(db, gameid, lock=True)
-    current=togame(row).model_dump(include={"sports","location","starttime","maxplayers","skilllevel"})
+    checkhost(row, playername)
+    current=togame(row).model_dump(include={"sports","location","starttime","maxplayers","skilllevel","host"})
     current.update(changes.model_dump(exclude_unset=True))
     try:
         checked=creategame(**current)
