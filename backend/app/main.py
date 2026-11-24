@@ -210,6 +210,9 @@ def joingame(gameid: UUID, playername: str, db: Session=Depends(getdb)):
 @app.delete("/games/{gameid}/join",response_model=game)
 def leavegame(gameid: UUID, playername: str, db: Session=Depends(getdb)):
     row=findgame(db, gameid, lock=True)
+    name=playername.strip()
+    if name == row.host:
+        raise HTTPException(status_code=400, detail="Host can't leave their own game; cancel it instead")
     for p in row.players:
         if p.playername==playername.strip():
             row.players.remove(p)
