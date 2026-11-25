@@ -11,8 +11,6 @@ from uuid import UUID, uuid4
 from typing import Literal
 from zoneinfo import ZoneInfo
 
-Base.metadata.create_all(bind=engine)
-
 app=FastAPI(title="UCLA Pickup Sports API")
 
 app.add_middleware(CORSMiddleware,
